@@ -1,0 +1,99 @@
+---
+# ===========================================================================
+# PLAY 2 — ClickHouse deployment
+# ===========================================================================
+# Adds the official ClickHouse APT repo, installs the pinned stable version,
+# pushes minimal config.d / users.d overrides (listen host + app user), enables
+# and starts the systemd service, and validates with a SELECT 1 over HTTP.
+# Config changes notify a handler so the service restarts only when needed.
+# ---------------------------------------------------------------------------
+
+- name: Deploy ClickHouse server
+  hosts: clickhouse
+  gather_facts: true
+
+  handlers:
+    - name: Restart clickhouse-server
+      ansible.builtin.systemd:
+        name: clickhouse-server
+        state: restarted
+
+  tasks:
+    - name: Add ClickHouse APT signing key
+      ansible.builtin.get_url:
+        url: "{{ clickhouse_apt_key_url }}"
+        dest: /tmp/clickhouse-key.asc
+        mode: "0644"
+
+    - name: Install ClickHouse signing key into keyring
+      ansible.builtin.shell:
+        cmd: "gpg --batch --yes --dearmor -o {{ clickhouse_apt_keyring_path }} /tmp/clickhouse-key.asc"
+        creates: "{{ clickhouse_apt_keyring_path }}"
+
+    - name: Add ClickHouse APT repository
+      ansible.builtin.apt_repository:
+        repo: "{{ clickhouse_apt_repo }}"
+        filename: clickhouse
+        state: present
+        update_cache: true
+
+    - name: Install pinned ClickHouse server and client
+      ansible.builtin.apt:
+        name:
+          - "clickhouse-server={{ clickhouse_version }}"
+          - "clickhouse-client={{ clickhouse_version }}"
+          - "clickhouse-common-static={{ clickhouse_version }}"
+        state: present
+        # The server package prompts for a default password interactively;
+        # suppress it for unattended installs.
+        force: true
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - name: Deploy network/listen config override
+      ansible.builtin.template:
+        src: ../templates/config.d/network.xml.j2
+        dest: /etc/clickhouse-server/config.d/network.xml
+        owner: clickhouse
+        group: clickhouse
+        mode: "0640"
+      notify: Restart clickhouse-server
+
+    - name: Deploy application user override
+      ansible.builtin.template:
+        src: ../templates/users.d/app-user.xml.j2
+        dest: /etc/clickhouse-server/users.d/app-user.xml
+        owner: clickhouse
+        group: clickhouse
+        mode: "0640"
+      notify: Restart clickhouse-server
+
+    - name: Enable and start clickhouse-server
+      ansible.builtin.systemd:
+        name: clickhouse-server
+        enabled: true
+        state: started
+
+    - name: Flush handlers so any config-driven restart happens before validation
+      ansible.builtin.meta: flush_handlers
+
+    - name: Wait for HTTP interface to accept connections
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ clickhouse_http_port }}"
+        timeout: 60
+
+    - name: Validate ClickHouse responds to SELECT 1
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ clickhouse_http_port }}/?query=SELECT%201"
+        method: GET
+        user: "{{ clickhouse_app_user }}"
+        password: "{{ clickhouse_app_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: ch_healthcheck
+      failed_when: ch_healthcheck.content | trim != '1'
+
+    - name: Report validation result
+      ansible.builtin.debug:
+        msg: "ClickHouse {{ clickhouse_version }} is up — SELECT 1 returned '{{ ch_healthcheck.content | trim }}'."

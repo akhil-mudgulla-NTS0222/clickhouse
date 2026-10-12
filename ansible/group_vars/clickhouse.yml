@@ -1,0 +1,38 @@
+---
+# ===========================================================================
+# ClickHouse stress-test deployment variables
+# ===========================================================================
+# This file is plain (no Ansible Vault) by explicit decision: the target is a
+# disposable stress-test box, not a production/internet-facing deployment.
+# ---------------------------------------------------------------------------
+
+# --- Version pin -----------------------------------------------------------
+# Pinned to a specific patch on the 24.8 LTS line for deterministic re-runs.
+# Bump this single value to upgrade; apt will install exactly this version.
+clickhouse_version: "24.8.14.39"
+
+# --- APT repository --------------------------------------------------------
+clickhouse_apt_key_url: "https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key"
+clickhouse_apt_keyring_path: "/usr/share/keyrings/clickhouse-keyring.gpg"
+clickhouse_apt_repo: "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb stable main"
+
+# --- Network exposure ------------------------------------------------------
+# Host-port exposure, both protocols open for stress tooling flexibility.
+# Bind to all interfaces (no firewall scoping by design in this phase).
+clickhouse_listen_host: "0.0.0.0"
+clickhouse_http_port: 8123      # HTTP interface
+clickhouse_tcp_port: 9000       # native protocol
+
+# --- Application user ------------------------------------------------------
+# Non-default user for test clients / ingestion API to authenticate with.
+clickhouse_app_user: "stress"
+clickhouse_app_password: "stress_pass"   # plain by design (stress test only)
+
+# --- Storage ---------------------------------------------------------------
+# Default root-volume path; no dedicated disk in this phase.
+clickhouse_data_path: "/var/lib/clickhouse"
+
+# --- OS resource limits (applied in host-prep) -----------------------------
+# ClickHouse opens many files/threads under load; raise ulimits accordingly.
+clickhouse_nofile_limit: 262144
+clickhouse_nproc_limit: 131072

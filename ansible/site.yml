@@ -1,0 +1,18 @@
+---
+# ===========================================================================
+# Top-level runner — executes both plays in order.
+#
+#   ansible-playbook site.yml
+#
+# Run a single phase with tags:
+#   ansible-playbook site.yml --tags host-prep
+#   ansible-playbook site.yml --tags deploy
+# ===========================================================================
+
+- name: Host provisioning
+  ansible.builtin.import_playbook: playbooks/01-host-prep.yml
+  tags: [host-prep]
+
+- name: ClickHouse deployment
+  ansible.builtin.import_playbook: playbooks/02-clickhouse-deploy.yml
+  tags: [deploy]

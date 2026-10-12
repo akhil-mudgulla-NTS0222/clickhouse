@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<!-- Managed by Ansible. Defines the non-default application user via users.d. -->
+<clickhouse>
+    <users>
+        <{{ clickhouse_app_user }}>
+            <!-- Plain password by explicit decision (stress-test box only). -->
+            <password>{{ clickhouse_app_password }}</password>
+
+            <!-- Open access for stress testing (no network scoping in this phase). -->
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>1</access_management>
+        </{{ clickhouse_app_user }}>
+    </users>
+</clickhouse>

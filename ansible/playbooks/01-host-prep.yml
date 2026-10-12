@@ -1,0 +1,48 @@
+---
+# ===========================================================================
+# PLAY 1 — Host provisioning (Ubuntu)
+# ===========================================================================
+# Prepares a clean Ubuntu host to run ClickHouse: refreshes apt, installs the
+# prerequisites needed to add the ClickHouse APT repo, and raises the OS
+# resource limits ClickHouse needs under stress load. Idempotent and safe to
+# re-run independently of the deployment play.
+# ---------------------------------------------------------------------------
+
+- name: Prepare Ubuntu host for ClickHouse
+  hosts: clickhouse
+  gather_facts: true
+
+  tasks:
+    - name: Assert target is Ubuntu
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['distribution'] == 'Ubuntu'
+        fail_msg: "This playbook targets Ubuntu only; found {{ ansible_facts['distribution'] }}."
+        quiet: true
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install repository prerequisites
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+        state: present
+
+    - name: Raise open-file and process limits for ClickHouse (limits.d drop-in)
+      ansible.builtin.copy:
+        dest: /etc/security/limits.d/90-clickhouse.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by Ansible — resource limits for ClickHouse under load.
+          clickhouse soft nofile {{ clickhouse_nofile_limit }}
+          clickhouse hard nofile {{ clickhouse_nofile_limit }}
+          clickhouse soft nproc  {{ clickhouse_nproc_limit }}
+          clickhouse hard nproc  {{ clickhouse_nproc_limit }}

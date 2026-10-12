@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<!-- Managed by Ansible. Overrides shipped config.xml via config.d. -->
+<clickhouse>
+    <!-- Host-port exposure: bind to all interfaces (no firewall scoping in this phase). -->
+    <listen_host>{{ clickhouse_listen_host }}</listen_host>
+
+    <!-- Interface ports used by stress tooling / ingestion API. -->
+    <http_port>{{ clickhouse_http_port }}</http_port>
+    <tcp_port>{{ clickhouse_tcp_port }}</tcp_port>
+
+    <!-- Data directory (default root-volume path in this phase). -->
+    <path>{{ clickhouse_data_path }}/</path>
+</clickhouse>
