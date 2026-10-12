@@ -1,1 +1,3 @@
 .zcode/
+ansible/inventory.ini
+ansible/.facts_cache/

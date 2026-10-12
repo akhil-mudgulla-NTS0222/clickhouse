@@ -1,81 +1,23 @@
-# ClickHouse Stress-Test Deployment (Ansible)
+# ClickHouse stress-test deployment
 
-Ansible project that dynamically provisions an Ubuntu host and deploys a pinned,
-stable ClickHouse server for stress / concurrency testing.
+Ansible provisions an Ubuntu VM with Docker Engine and the Compose plugin, then deploys **only ClickHouse** as a container. The two plays can be rerun independently. Intended for a disposable lab VM: HTTP/native ports are exposed without TLS or firewall rules, and credentials are plaintext. Do not use this configuration on an untrusted network.
 
-> **Scope note:** This is intentionally scoped for a disposable stress-test box
-> — **no firewall scoping** and **no Ansible Vault** (plain credentials). Do not
-> reuse as-is for a production / internet-facing deployment.
+## Requirements
 
-## Layout
+- Ubuntu VM with password SSH, sudo, internet access to Docker's Ubuntu APT repository and Docker Hub, and sufficient disk at `clickhouse_data_path`.
+- Ansible and `sshpass` on the control machine (`sudo apt-get install -y ansible sshpass` on Ubuntu).
+- `8123` and `9000` free on the VM. If a native ClickHouse service was installed separately, stop/disable it before deploying; this play does not uninstall it or remove its data.
+- Review the pinned image tag and settings in `group_vars/clickhouse.yml` before deploying.
 
-```
-ansible/
-├── ansible.cfg                       # inventory path + lab-friendly defaults
-├── inventory.ini                     # target host (fill in; password auth)
-├── site.yml                          # runs both plays in order
-├── group_vars/
-│   └── clickhouse.yml                # version pin, ports, app user, limits
-├── playbooks/
-│   ├── 01-host-prep.yml              # Play 1 — host provisioning
-│   └── 02-clickhouse-deploy.yml      # Play 2 — ClickHouse deployment
-└── templates/
-    ├── config.d/network.xml.j2       # listen host + ports + data path
-    └── users.d/app-user.xml.j2       # non-default application user
-```
+## Run in order
 
-## Design decisions
+1. Edit `inventory.ini` with your VM IP, SSH user, SSH password and sudo password. Keep this plaintext file out of shared repositories.
+2. From `ansible/`, check reachability: `ansible clickhouse -m ping`.
+3. Run `ansible-playbook site.yml --syntax-check`, then `ansible-playbook site.yml` (not `--check` for the first install: check mode cannot install Docker or start a container).
+4. Verify from the control machine: `curl --user 'stress:stress_pass' 'http://<VM_IP>:8123/?query=SELECT%201'`.
 
-- **Two plays, cleanly separated.** Host prep (apt, prerequisites, ulimits) is
-  independent and re-runnable without touching the deployment.
-- **Password-based SSH, hardcoded in `inventory.ini`.** For a disposable lab
-  box, `ansible_password` and `ansible_become_password` live in the inventory
-  (no Vault, by design). Requires `sshpass` on the control node. Because the
-  password is plaintext, keep the file out of version control.
-- **Deterministic version pin.** `clickhouse_version` in `group_vars` installs
-  an exact apt version (`24.8` LTS line) — re-runs are reproducible. Bump that
-  one value to upgrade.
-- **Override files, not shipped config.** All customization lands in `config.d/`
-  and `users.d/` drop-ins; the packaged `config.xml`/`users.xml` stay untouched.
-- **Idempotent restarts.** Config templates `notify` a restart handler, so the
-  service restarts only when a config file actually changes.
-- **Host-port exposure.** Both HTTP (8123) and native (9000) are exposed on the
-  host for stress-tooling flexibility.
+To rerun only one phase use `ansible-playbook site.yml --tags host-prep` or `--tags deploy`. The host play installs Docker; the deploy play renders `/opt/clickhouse-stress/compose.yml` and config overrides, starts the pinned image, then checks `SELECT 1`. Both protocols use **host networking** (no Docker NAT); the host data directory `/var/lib/clickhouse-stress` is bind-mounted into the container. The data survives container restarts and recreation. The bind-mounted directory is owned by the container's ClickHouse UID/GID, configured in group vars. Container `nofile`/`nproc` limits are set by Compose, not PAM limits on the host.
 
-## Usage
+On the VM: `sudo docker compose -f /opt/clickhouse-stress/compose.yml ps`, `sudo docker compose -f /opt/clickhouse-stress/compose.yml logs --tail=100`, and `sudo docker compose -f /opt/clickhouse-stress/compose.yml restart` are useful for inspection. `down` removes the container **but not the host bind-mounted data**; restarting also does not reset state. For reproducible test runs, explicitly reset the test tables with SQL between runs, or intentionally clear the lab data directory only after a backup and with ClickHouse stopped. Do not treat `down -v` as a data reset for bind mounts.
 
-0. One-time on the control node: `sudo apt-get install -y sshpass`
-   (needed for Ansible password auth).
-1. Edit `inventory.ini`:
-   - `ansible_host` → target IP
-   - `ansible_user` → SSH user with sudo rights
-   - `ansible_password` → SSH login password
-   - `ansible_become_password` → sudo password (same as login if applicable;
-     delete the line if the user has passwordless sudo)
-2. Review `group_vars/clickhouse.yml` (version, ports, app user/password).
-3. Run everything (no password prompts — credentials come from the inventory):
-
-   ```
-   cd ansible
-   ansible-playbook site.yml
-   ```
-
-   Or a single phase:
-
-   ```
-   ansible-playbook site.yml --tags host-prep
-   ansible-playbook site.yml --tags deploy
-   ```
-
-## Validation
-
-The deploy play finishes with a built-in health check: it waits for the HTTP
-port, then runs `SELECT 1` as the application user and fails the run unless the
-server returns `1`.
-
-Manual check from any client afterwards:
-
-```
-curl "http://<host>:8123/?query=SELECT%20version()" \
-  --user "stress:stress_pass"
-```
+The image is pinned to `24.8.14.39` for reproducible version selection; this is a tag, not an immutable digest. Image updates require changing the pin and redeploying. This setup does not provision the ingestion API.

@@ -1,0 +1,16 @@
+services:
+  clickhouse:
+    image: "clickhouse/clickhouse-server:{{ clickhouse_version }}"
+    restart: unless-stopped
+    network_mode: host
+    ulimits:
+      nofile:
+        soft: {{ clickhouse_nofile_limit }}
+        hard: {{ clickhouse_nofile_limit }}
+      nproc:
+        soft: {{ clickhouse_nproc_limit }}
+        hard: {{ clickhouse_nproc_limit }}
+    volumes:
+      - "{{ clickhouse_data_path }}:/var/lib/clickhouse"
+      - "{{ clickhouse_deploy_dir }}/config.d/network.xml:/etc/clickhouse-server/config.d/network.xml:ro"
+      - "{{ clickhouse_deploy_dir }}/users.d/app-user.xml:/etc/clickhouse-server/users.d/app-user.xml:ro"

@@ -1,14 +1,5 @@
 ---
-# ===========================================================================
-# PLAY 1 — Host provisioning (Ubuntu)
-# ===========================================================================
-# Prepares a clean Ubuntu host to run ClickHouse: refreshes apt, installs the
-# prerequisites needed to add the ClickHouse APT repo, and raises the OS
-# resource limits ClickHouse needs under stress load. Idempotent and safe to
-# re-run independently of the deployment play.
-# ---------------------------------------------------------------------------
-
-- name: Prepare Ubuntu host for ClickHouse
+- name: Prepare Ubuntu host for Docker-based ClickHouse
   hosts: clickhouse
   gather_facts: true
 
@@ -20,29 +11,49 @@
         fail_msg: "This playbook targets Ubuntu only; found {{ ansible_facts['distribution'] }}."
         quiet: true
 
-    - name: Update apt cache
+    - name: Install Docker repository prerequisites
       ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+        state: present
         update_cache: true
         cache_valid_time: 3600
 
-    - name: Install repository prerequisites
-      ansible.builtin.apt:
-        name:
-          - apt-transport-https
-          - ca-certificates
-          - curl
-          - gnupg
-        state: present
+    - name: Create APT keyring directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
 
-    - name: Raise open-file and process limits for ClickHouse (limits.d drop-in)
-      ansible.builtin.copy:
-        dest: /etc/security/limits.d/90-clickhouse.conf
+    - name: Install official Docker signing key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
         owner: root
         group: root
         mode: "0644"
-        content: |
-          # Managed by Ansible — resource limits for ClickHouse under load.
-          clickhouse soft nofile {{ clickhouse_nofile_limit }}
-          clickhouse hard nofile {{ clickhouse_nofile_limit }}
-          clickhouse soft nproc  {{ clickhouse_nproc_limit }}
-          clickhouse hard nproc  {{ clickhouse_nproc_limit }}
+
+    - name: Add official Docker repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch={{ ansible_facts['architecture'] | replace('x86_64', 'amd64') | replace('aarch64', 'arm64') }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_facts['distribution_release'] }} stable"
+        filename: docker
+        state: present
+        update_cache: true
+
+    - name: Install Docker Engine and Compose plugin
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+
+    - name: Enable and start Docker
+      ansible.builtin.systemd:
+        name: docker
+        enabled: true
+        state: started
