@@ -12,7 +12,7 @@
 clickhouse_version: "24.8.14.39"
 
 # --- APT repository --------------------------------------------------------
-clickhouse_apt_key_url: "https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key"
+clickhouse_apt_key_url: "https://packages.clickhouse.com/deb/pubkey.gpg"
 clickhouse_apt_keyring_path: "/usr/share/keyrings/clickhouse-keyring.gpg"
 clickhouse_apt_repo: "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb stable main"
 
